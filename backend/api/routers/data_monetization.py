@@ -9,13 +9,13 @@ Endpoints for:
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 import logging
 from datetime import datetime, timedelta
 
 from ..models_data_monetization import (
     SearchPattern, SkillCombinationPattern, PlatformSourcingStrategy,
-    DatasetType, Scale AIDataRecord, DatasetExport, DataProductListing,
+    DatasetType, ScaleAIDataRecord, DatasetExport, DataProductListing,
     DataPurchaseRequest, DataPurchase, DataMonetizationMetrics,
     PatternLearningConfig
 )
@@ -25,6 +25,7 @@ from ..database_data_monetization import (
     DatasetExportDB, DataPurchaseDB
 )
 from ..services.pattern_learner import get_pattern_learner
+from ..services.scale_ai_exporter import scale_ai_exporter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -228,6 +229,158 @@ async def export_dataset(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/export/scale-ai-csv/{dataset_type}")
+async def export_scale_ai_csv(
+    dataset_type: DatasetType,
+    limit: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Export data in Scale AI LLM Engine CSV format
+
+    Format: prompt,response (max 100K rows, min 200 recommended)
+    Use case: Fine-tuning LLMs via Scale AI platform
+
+    Returns CSV file content ready for upload to Scale AI
+    """
+    try:
+        if dataset_type == DatasetType.SEARCH_QUERY_PAIRS:
+            # Get search patterns
+            patterns_query = db.query(SearchPatternDB).order_by(
+                SearchPatternDB.confidence_score.desc()
+            )
+            if limit:
+                patterns_query = patterns_query.limit(min(limit, 100000))
+
+            patterns_db = patterns_query.all()
+
+            # Convert to Pydantic models
+            patterns = [SearchPattern(**p.__dict__) for p in patterns_db]
+
+            # Export to Scale AI CSV format
+            csv_content = scale_ai_exporter.export_search_patterns_to_csv(patterns)
+
+            # Validate
+            validation = scale_ai_exporter.validate_csv_for_scale_ai(csv_content)
+
+            return {
+                "format": "scale_ai_csv",
+                "dataset_type": dataset_type.value,
+                "record_count": len(patterns),
+                "validation": validation,
+                "csv_content": csv_content,
+                "download_filename": f"scale_ai_{dataset_type.value}_{datetime.utcnow().strftime('%Y%m%d')}.csv",
+                "ready_for_upload": validation["valid"]
+            }
+
+        elif dataset_type == DatasetType.SKILL_TAXONOMY:
+            # Get skill patterns
+            patterns_db = db.query(SkillPatternDB).limit(limit or 100000).all()
+            patterns = [SkillCombinationPattern(**p.__dict__) for p in patterns_db]
+
+            csv_content = scale_ai_exporter.export_skill_patterns_to_csv(patterns)
+            validation = scale_ai_exporter.validate_csv_for_scale_ai(csv_content)
+
+            return {
+                "format": "scale_ai_csv",
+                "dataset_type": dataset_type.value,
+                "record_count": len(patterns),
+                "validation": validation,
+                "csv_content": csv_content,
+                "download_filename": f"scale_ai_{dataset_type.value}_{datetime.utcnow().strftime('%Y%m%d')}.csv",
+                "ready_for_upload": validation["valid"]
+            }
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Dataset type {dataset_type} not supported for CSV export. Use JSONL format instead."
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Scale AI CSV export failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/export/scale-ai-jsonl/{dataset_type}")
+async def export_scale_ai_jsonl(
+    dataset_type: DatasetType,
+    format_type: str = "general",  # general|alpaca|openai_chat
+    limit: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Export data in JSONL format for various AI training platforms
+
+    Supported formats:
+    - general: Standard JSONL (Scale AI, HuggingFace, AWS, Google)
+    - alpaca: Instruction-tuning format (Stanford Alpaca)
+    - openai_chat: OpenAI fine-tuning format
+
+    Returns JSONL content ready for AI training
+    """
+    try:
+        learner = get_pattern_learner(db)
+
+        if format_type == "alpaca" and dataset_type == DatasetType.SEARCH_QUERY_PAIRS:
+            # Get patterns
+            patterns_db = db.query(SearchPatternDB).order_by(
+                SearchPatternDB.confidence_score.desc()
+            ).limit(limit or 100000).all()
+            patterns = [SearchPattern(**p.__dict__) for p in patterns_db]
+
+            # Export to Alpaca format
+            jsonl_content = scale_ai_exporter.export_to_alpaca_format(patterns)
+
+            return {
+                "format": "alpaca_jsonl",
+                "dataset_type": dataset_type.value,
+                "record_count": len(patterns),
+                "jsonl_content": jsonl_content,
+                "download_filename": f"alpaca_{dataset_type.value}_{datetime.utcnow().strftime('%Y%m%d')}.jsonl",
+                "use_cases": ["Stanford Alpaca fine-tuning", "Vicuna training", "LLaMA instruction tuning"]
+            }
+
+        elif format_type == "openai_chat" and dataset_type == DatasetType.SEARCH_QUERY_PAIRS:
+            # Get patterns
+            patterns_db = db.query(SearchPatternDB).order_by(
+                SearchPatternDB.confidence_score.desc()
+            ).limit(limit or 100000).all()
+            patterns = [SearchPattern(**p.__dict__) for p in patterns_db]
+
+            # Export to OpenAI chat format
+            jsonl_content = scale_ai_exporter.export_to_openai_chat_format(patterns)
+
+            return {
+                "format": "openai_chat_jsonl",
+                "dataset_type": dataset_type.value,
+                "record_count": len(patterns),
+                "jsonl_content": jsonl_content,
+                "download_filename": f"openai_chat_{dataset_type.value}_{datetime.utcnow().strftime('%Y%m%d')}.jsonl",
+                "use_cases": ["GPT-3.5 fine-tuning", "GPT-4 fine-tuning"]
+            }
+
+        else:
+            # General JSONL format
+            records = learner.export_to_scalai_format(dataset_type, limit)
+            jsonl_content = scale_ai_exporter.export_to_jsonl(records)
+
+            return {
+                "format": "general_jsonl",
+                "dataset_type": dataset_type.value,
+                "record_count": len(records),
+                "jsonl_content": jsonl_content,
+                "download_filename": f"scale_ai_{dataset_type.value}_{datetime.utcnow().strftime('%Y%m%d')}.jsonl",
+                "use_cases": ["Scale AI Data Engine", "HuggingFace datasets", "AWS SageMaker", "Google Vertex AI"]
+            }
+
+    except Exception as e:
+        logger.error(f"JSONL export failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== Data Marketplace ====================
 
 @router.get("/marketplace/products", response_model=List[DataProductListing])
@@ -413,7 +566,7 @@ async def get_monetization_metrics(db: Session = Depends(get_db)):
 
 # ==================== Helper Functions ====================
 
-def _calculate_metadata_distribution(records: List[Scale AIDataRecord]) -> Dict:
+def _calculate_metadata_distribution(records: List[ScaleAIDataRecord]) -> Dict:
     """Calculate distribution of metadata for dataset description"""
     from collections import Counter
 
