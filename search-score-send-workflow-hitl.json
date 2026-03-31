@@ -1,0 +1,1004 @@
+{
+  "name": "Search-Score-Send with HITL Approval",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "search-score-send-hitl",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "search-score-send-hitl-webhook"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/jd/extract",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "raw_text",
+              "value": "={{$json.jobDescription}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1000
+          }
+        }
+      },
+      "id": "jd-extractor",
+      "name": "JD Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "notes": "Uses Claude API to extract structured requirements from job description"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/hitl/create-approval-request",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workflow_id",
+              "value": "={{$workflow.id}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "stage",
+              "value": "jd_review"
+            },
+            {
+              "name": "data",
+              "value": "={{$json}}"
+            },
+            {
+              "name": "reviewer_email",
+              "value": "={{$node['Webhook Trigger'].json.reviewerEmail || $env.DEFAULT_REVIEWER_EMAIL}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "create-jd-approval",
+      "name": "Create JD Approval Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300],
+      "notes": "Creates HITL approval request for extracted JD"
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": 60,
+        "resumeWebhook": true,
+        "options": {}
+      },
+      "id": "wait-for-jd-approval",
+      "name": "Wait for JD Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "webhookId": "jd-approval-webhook",
+      "notes": "Pauses workflow until human approves/rejects the extracted JD requirements"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.approval_status}}",
+              "operation": "equals",
+              "value2": "approved"
+            }
+          ]
+        }
+      },
+      "id": "check-jd-approval",
+      "name": "Check JD Approval",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "notes": "Only proceed if JD was approved by human reviewer"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "split-for-parallel-search",
+      "name": "Split for Parallel Search",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/search/linkedin",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$json.approved_jd.search_boolean.linkedin}}"
+            },
+            {
+              "name": "limit",
+              "value": "={{Math.floor(($json.maxCandidates || 50) / 3)}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2
+          }
+        }
+      },
+      "id": "linkedin-search",
+      "name": "LinkedIn Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 100],
+      "notes": "Parallel search on LinkedIn using approved Boolean query"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/search/github",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$json.approved_jd.search_boolean.github}}"
+            },
+            {
+              "name": "limit",
+              "value": "={{Math.floor(($json.maxCandidates || 50) / 3)}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2
+          }
+        }
+      },
+      "id": "github-search",
+      "name": "GitHub Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200],
+      "notes": "Parallel search on GitHub"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/search/stackoverflow",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$json.approved_jd.search_boolean.stackoverflow}}"
+            },
+            {
+              "name": "limit",
+              "value": "={{Math.floor(($json.maxCandidates || 50) / 3)}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2
+          }
+        }
+      },
+      "id": "stackoverflow-search",
+      "name": "Stack Overflow Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300],
+      "notes": "Parallel search on Stack Overflow"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/progress/update",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "stage",
+              "value": "searching"
+            },
+            {
+              "name": "message",
+              "value": "Searching across platforms..."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "progress-searching",
+      "name": "Update Progress: Searching",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400],
+      "notes": "Send real-time progress update to frontend via SSE"
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "email_hash",
+              "field2": "email_hash"
+            }
+          ]
+        },
+        "options": {
+          "fuzzyCompare": false,
+          "disableDotNotation": false
+        }
+      },
+      "id": "merge-search-results",
+      "name": "Merge Search Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1650, 200],
+      "notes": "Combine results from all platforms and deduplicate by email hash"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/progress/update",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "stage",
+              "value": "scoring"
+            },
+            {
+              "name": "message",
+              "value": "Scoring {{$json.length}} candidates..."
+            },
+            {
+              "name": "candidates_found",
+              "value": "={{$json.length}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "progress-scoring",
+      "name": "Update Progress: Scoring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 200],
+      "notes": "Send real-time progress update to frontend"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/scoring/batch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "candidates",
+              "value": "={{$json}}"
+            },
+            {
+              "name": "job_requirements",
+              "value": "={{$node['Wait for JD Approval'].json.approved_jd}}"
+            },
+            {
+              "name": "threshold",
+              "value": "={{$node['Webhook Trigger'].json.scoreThreshold || 80}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2
+          }
+        }
+      },
+      "id": "batch-scoring",
+      "name": "Batch Candidate Scoring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2050, 200],
+      "notes": "Score all candidates using Claude API with GDPR anonymization"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.overall_score}}",
+              "operation": "largerEqual",
+              "value2": "={{$node['Webhook Trigger'].json.scoreThreshold || 80}}"
+            }
+          ]
+        }
+      },
+      "id": "filter-qualified",
+      "name": "Filter Qualified (80%+)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2250, 200],
+      "notes": "Only candidates scoring 80% or higher proceed to message generation"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/progress/update",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "stage",
+              "value": "generating_messages"
+            },
+            {
+              "name": "message",
+              "value": "Generating personalized messages for {{$json.length}} qualified candidates..."
+            },
+            {
+              "name": "candidates_qualified",
+              "value": "={{$json.length}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "progress-messages",
+      "name": "Update Progress: Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2450, 100],
+      "notes": "Send real-time progress update"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/messages/generate-batch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "qualified_candidates",
+              "value": "={{$json}}"
+            },
+            {
+              "name": "job",
+              "value": "={{$node['Wait for JD Approval'].json.approved_jd}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2
+          }
+        }
+      },
+      "id": "generate-messages",
+      "name": "Generate Personalized Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2650, 100],
+      "notes": "Generate truly personalized messages (not templates) using Claude API"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/hitl/create-approval-request",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workflow_id",
+              "value": "={{$workflow.id}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "stage",
+              "value": "final_review"
+            },
+            {
+              "name": "data",
+              "value": "={{$json}}"
+            },
+            {
+              "name": "reviewer_email",
+              "value": "={{$node['Webhook Trigger'].json.reviewerEmail || $env.DEFAULT_REVIEWER_EMAIL}}"
+            },
+            {
+              "name": "candidates_count",
+              "value": "={{$json.length}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "create-final-approval",
+      "name": "Create Final Approval Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2850, 100],
+      "notes": "Creates HITL approval request for final candidate list with messages"
+    },
+    {
+      "parameters": {
+        "unit": "hours",
+        "amount": 24,
+        "resumeWebhook": true,
+        "options": {}
+      },
+      "id": "wait-for-final-approval",
+      "name": "Wait for Final Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [3050, 100],
+      "webhookId": "final-approval-webhook",
+      "notes": "Pauses until human reviews and approves candidates + messages (EU AI Act compliance)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.approval_status}}",
+              "operation": "equals",
+              "value2": "approved"
+            }
+          ]
+        }
+      },
+      "id": "check-final-approval",
+      "name": "Check Final Approval",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [3250, 100],
+      "notes": "Only send messages if human approved the final list"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/outreach/prepare-send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "approved_candidates",
+              "value": "={{$json.approved_candidates}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "send_mode",
+              "value": "={{$node['Webhook Trigger'].json.sendMode || 'queue'}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "prepare-send",
+      "name": "Prepare Send Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3450, 50],
+      "notes": "Prepare messages for sending (queued or immediate)"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.callbackUrl}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "completed"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{$workflow.id}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "candidates_found",
+              "value": "={{$node['Merge Search Results'].json.length}}"
+            },
+            {
+              "name": "candidates_scored",
+              "value": "={{$node['Batch Candidate Scoring'].json.scored}}"
+            },
+            {
+              "name": "candidates_qualified",
+              "value": "={{$node['Generate Personalized Messages'].json.length}}"
+            },
+            {
+              "name": "candidates_approved",
+              "value": "={{$node['Wait for Final Approval'].json.approved_candidates.length}}"
+            },
+            {
+              "name": "review_url",
+              "value": "={{$env.FRONTEND_URL}}/workflows/{{$execution.id}}/review"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "notify-callback",
+      "name": "Notify Completion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3650, 50],
+      "notes": "Send completion notification to callback URL if provided"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  workflow_id: $workflow.id,\n  execution_id: $execution.id,\n  status: 'completed_with_hitl',\n  candidates_found: $node['Merge Search Results'].json.length,\n  candidates_scored: $node['Batch Candidate Scoring'].json.scored,\n  candidates_qualified: $node['Generate Personalized Messages'].json.length,\n  candidates_approved: $node['Wait for Final Approval'].json.approved_candidates.length,\n  messages_queued: $node['Prepare Send Queue'].json.queued,\n  review_url: $env.FRONTEND_URL + '/workflows/' + $execution.id + '/review',\n  compliance: {\n    gdpr: 'zero_pii_to_claude',\n    eu_ai_act: 'human_in_the_loop_approved',\n    audit_trail: true\n  },\n  timestamp: new Date().toISOString()\n})}}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3850, 100],
+      "notes": "Return workflow results with HITL compliance status"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  workflow_id: $workflow.id,\n  execution_id: $execution.id,\n  status: 'rejected',\n  stage: 'jd_approval',\n  reason: $json.rejection_reason || 'JD requirements not approved',\n  timestamp: new Date().toISOString()\n})}}",
+        "options": {}
+      },
+      "id": "respond-jd-rejected",
+      "name": "Respond: JD Rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 450],
+      "notes": "Return rejection response if JD was not approved"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  workflow_id: $workflow.id,\n  execution_id: $execution.id,\n  status: 'rejected',\n  stage: 'final_approval',\n  reason: $json.rejection_reason || 'Final candidate list not approved',\n  candidates_reviewed: $node['Generate Personalized Messages'].json.length,\n  timestamp: new Date().toISOString()\n})}}",
+        "options": {}
+      },
+      "id": "respond-final-rejected",
+      "name": "Respond: Final Rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3250, 300],
+      "notes": "Return rejection response if final approval was denied"
+    },
+    {
+      "parameters": {
+        "content": "## Search-Score-Send with HITL\n\n**Version:** 2.0 (HITL-enabled)\n**Created:** 2026-03-31\n**Compliance:** GDPR + EU AI Act\n\n### Overview\nAutomated recruitment workflow with **Human-in-the-Loop** approval gates at critical decision points.\n\n### HITL Approval Gates\n\n1. **JD Review** (60 min timeout)\n   - Human reviews extracted requirements\n   - Can edit search queries before execution\n   - Must approve to proceed\n\n2. **Final Review** (24 hr timeout)\n   - Human reviews scored candidates\n   - Reviews generated messages\n   - Can edit messages before approval\n   - EU AI Act compliance: High-risk AI decision\n\n### Input (POST to webhook)\n```json\n{\n  \"jobDescription\": \"string\",\n  \"maxCandidates\": 50,\n  \"scoreThreshold\": 80,\n  \"reviewerEmail\": \"recruiter@company.com\",\n  \"sendMode\": \"queue|immediate\",\n  \"callbackUrl\": \"optional\"\n}\n```\n\n### Real-Time Progress Updates\n- SSE endpoint: `/api/progress/stream/{execution_id}`\n- Updates at: searching, scoring, generating_messages\n- Frontend can show live progress bar\n\n### Compliance Features\n- ✅ GDPR: Zero PII to Claude (anonymization layer)\n- ✅ EU AI Act: Mandatory human review (HITL)\n- ✅ Audit Trail: Complete execution logging\n- ✅ Data Retention: 180 days, then auto-delete\n- ✅ Right to Explanation: Transparent scoring criteria\n\n### Performance\n- Target: < 5 min execution (excl. HITL wait)\n- Parallel search execution\n- Batch API calls for efficiency\n- Real-time progress via SSE",
+        "height": 600,
+        "width": 380
+      },
+      "id": "sticky-note-documentation",
+      "name": "HITL Workflow Documentation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "content": "⚠️ **Error Handling**\n\n- All HTTP nodes: 2-3 retry attempts\n- Timeouts configured per node\n- Failed searches don't block workflow\n- HITL timeouts return to requester\n- Progress updates are fire-and-forget",
+        "height": 160,
+        "width": 280
+      },
+      "id": "sticky-note-error-handling",
+      "name": "Error Handling Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "content": "🔐 **Security & Privacy**\n\n- Email hashes for deduplication\n- No PII in n8n execution logs\n- Backend anonymizes before Claude\n- HITL approval links expire after use\n- Encrypted database storage",
+        "height": 160,
+        "width": 280
+      },
+      "id": "sticky-note-security",
+      "name": "Security Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1020, 600]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "JD Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD Extraction": {
+      "main": [
+        [
+          {
+            "node": "Create JD Approval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create JD Approval Request": {
+      "main": [
+        [
+          {
+            "node": "Wait for JD Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for JD Approval": {
+      "main": [
+        [
+          {
+            "node": "Check JD Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check JD Approval": {
+      "main": [
+        [
+          {
+            "node": "Split for Parallel Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Progress: Searching",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: JD Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split for Parallel Search": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stack Overflow Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Stack Overflow Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Search Results": {
+      "main": [
+        [
+          {
+            "node": "Update Progress: Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress: Scoring": {
+      "main": [
+        [
+          {
+            "node": "Batch Candidate Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Candidate Scoring": {
+      "main": [
+        [
+          {
+            "node": "Filter Qualified (80%+)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Qualified (80%+)": {
+      "main": [
+        [
+          {
+            "node": "Update Progress: Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress: Messages": {
+      "main": [
+        [
+          {
+            "node": "Generate Personalized Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Personalized Messages": {
+      "main": [
+        [
+          {
+            "node": "Create Final Approval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Final Approval Request": {
+      "main": [
+        [
+          {
+            "node": "Wait for Final Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Final Approval": {
+      "main": [
+        [
+          {
+            "node": "Check Final Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Final Approval": {
+      "main": [
+        [
+          {
+            "node": "Prepare Send Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Final Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Send Queue": {
+      "main": [
+        [
+          {
+            "node": "Notify Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Completion": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "timezone": "Europe/Amsterdam",
+    "saveExecutionProgress": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 3600
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "1",
+      "name": "recruitment"
+    },
+    {
+      "id": "2",
+      "name": "automation"
+    },
+    {
+      "id": "3",
+      "name": "ai"
+    },
+    {
+      "id": "4",
+      "name": "hitl"
+    },
+    {
+      "id": "5",
+      "name": "compliance"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-31T16:30:00.000Z",
+  "versionId": "2"
+}
