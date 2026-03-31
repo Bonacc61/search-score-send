@@ -10,7 +10,7 @@ import logging
 from typing import AsyncGenerator
 import json
 
-from .routers import jd, search, scoring, messages, hitl, progress
+from .routers import jd, search, scoring, messages, hitl, progress, data_monetization
 from .config import settings
 from .database import engine, Base
 from .sse import sse_manager
@@ -74,6 +74,7 @@ app.include_router(scoring.router, prefix="/api/scoring", tags=["Scoring"])
 app.include_router(messages.router, prefix="/api/messages", tags=["Messages"])
 app.include_router(hitl.router, prefix="/api/hitl", tags=["HITL"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
+app.include_router(data_monetization.router, prefix="/api/data", tags=["Data Monetization"])
 
 
 @app.get("/")
