@@ -3,7 +3,7 @@ Pattern Learning Service
 
 Learns from successful sourcing workflows to create valuable, sellable datasets.
 This is the core monetization layer - it accrues knowledge that can be sold to:
-- AI training companies (ScalAI, Scale AI)
+- AI training companies (Scale AI, Scale AI)
 - Recruitment platforms
 - HR tech companies
 - Research institutions
@@ -24,7 +24,7 @@ from ..models_data_monetization import (
     SearchPattern, SearchPatternType,
     SkillCombinationPattern, PlatformSourcingStrategy,
     ScoringPattern, MessagePersonalizationPattern,
-    ScalAIDataRecord, DatasetType
+    Scale AIDataRecord, DatasetType
 )
 
 logger = logging.getLogger(__name__)
@@ -423,22 +423,22 @@ class PatternLearner:
 
         return query
 
-    # ==================== Export to ScalAI Format ====================
+    # ==================== Export to Scale AI Format ====================
 
     def export_to_scalai_format(
         self,
         dataset_type: DatasetType,
         limit: Optional[int] = None
-    ) -> List[ScalAIDataRecord]:
+    ) -> List[Scale AIDataRecord]:
         """
-        Export learned patterns to ScalAI-compatible format for sale
+        Export learned patterns to Scale AI-compatible format for sale
 
         Args:
             dataset_type: Type of dataset to export
             limit: Max number of records to export
 
         Returns:
-            List of ScalAI-formatted records ready for sale
+            List of Scale AI-formatted records ready for sale
         """
         records = []
 
@@ -449,7 +449,7 @@ class PatternLearner:
             ).limit(limit or 10000).all()
 
             for pattern in patterns:
-                record = ScalAIDataRecord(
+                record = Scale AIDataRecord(
                     record_id=pattern.id,
                     dataset_type=dataset_type,
                     input_data={
@@ -478,7 +478,7 @@ class PatternLearner:
             patterns = self.db.query(SkillPatternDB).limit(limit or 10000).all()
 
             for pattern in patterns:
-                record = ScalAIDataRecord(
+                record = Scale AIDataRecord(
                     record_id=pattern.id,
                     dataset_type=dataset_type,
                     input_data={
@@ -499,7 +499,7 @@ class PatternLearner:
                 )
                 records.append(record)
 
-        logger.info(f"Exported {len(records)} records in ScalAI format for {dataset_type}")
+        logger.info(f"Exported {len(records)} records in Scale AI format for {dataset_type}")
         return records
 
 

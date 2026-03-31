@@ -3,7 +3,7 @@ Data Monetization Layer - Pattern Learning & Data Accrual
 
 This layer learns from sourcing patterns and semantic search behavior to create
 valuable datasets that can be sold to:
-- AI training companies (ScalAI, Scale AI, Labelbox)
+- AI training companies (Scale AI, Scale AI, Labelbox)
 - Recruitment platforms needing training data
 - HR tech companies building AI products
 - Research institutions studying hiring patterns
@@ -247,7 +247,7 @@ class MessagePersonalizationPattern(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-# ==================== Structured Data Export (ScalAI Format) ====================
+# ==================== Structured Data Export (Scale AI Format) ====================
 
 class DatasetType(str, Enum):
     """Types of datasets we can export for sale"""
@@ -259,9 +259,9 @@ class DatasetType(str, Enum):
     MARKET_INTELLIGENCE = "market_intelligence"  # Hiring trends and patterns
 
 
-class ScalAIDataRecord(BaseModel):
+class Scale AIDataRecord(BaseModel):
     """
-    Single training data record formatted for ScalAI/Scale AI/similar platforms
+    Single training data record formatted for Scale AI/Scale AI/similar platforms
 
     This is the format data buyers expect
     """
@@ -308,7 +308,7 @@ class DatasetExport(BaseModel):
     version: str = Field(..., description="Semantic versioning e.g. '1.2.0'")
 
     # Records
-    records: List[ScalAIDataRecord]
+    records: List[Scale AIDataRecord]
     record_count: int
 
     # Quality metrics
@@ -430,7 +430,7 @@ class DataProductListing(BaseModel):
     )
 
     # Sample
-    sample_records: List[ScalAIDataRecord] = Field(
+    sample_records: List[Scale AIDataRecord] = Field(
         default_factory=list,
         description="Free sample for buyers to evaluate"
     )

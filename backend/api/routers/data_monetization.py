@@ -3,7 +3,7 @@ Data Monetization API
 
 Endpoints for:
 1. Pattern learning (automatic knowledge accrual)
-2. Data export (ScalAI format)
+2. Data export (Scale AI format)
 3. Data marketplace (selling learned patterns)
 4. Metrics (tracking value of accrued data)
 """
@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from ..models_data_monetization import (
     SearchPattern, SkillCombinationPattern, PlatformSourcingStrategy,
-    DatasetType, ScalAIDataRecord, DatasetExport, DataProductListing,
+    DatasetType, Scale AIDataRecord, DatasetExport, DataProductListing,
     DataPurchaseRequest, DataPurchase, DataMonetizationMetrics,
     PatternLearningConfig
 )
@@ -168,14 +168,14 @@ async def export_dataset(
     db: Session = Depends(get_db)
 ):
     """
-    Export learned patterns to ScalAI-compatible format
+    Export learned patterns to Scale AI-compatible format
 
     This creates a dataset ready for sale to AI training companies
     """
     try:
         learner = get_pattern_learner(db)
 
-        # Export to ScalAI format
+        # Export to Scale AI format
         records = learner.export_to_scalai_format(dataset_type, limit)
 
         if not records:
@@ -413,7 +413,7 @@ async def get_monetization_metrics(db: Session = Depends(get_db)):
 
 # ==================== Helper Functions ====================
 
-def _calculate_metadata_distribution(records: List[ScalAIDataRecord]) -> Dict:
+def _calculate_metadata_distribution(records: List[Scale AIDataRecord]) -> Dict:
     """Calculate distribution of metadata for dataset description"""
     from collections import Counter
 

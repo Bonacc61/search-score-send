@@ -17,7 +17,7 @@ While you charge users €99-€999/month for the **Search-Score-Send service**,
 - What makes outreach messages effective
 
 **Who buys this**:
-- **AI training companies** (ScalAI, Scale AI, Labelbox) - Need real-world recruitment data
+- **AI training companies** (Scale AI, Scale AI, Labelbox) - Need real-world recruitment data
 - **Recruitment platforms** (LinkedIn, Indeed) - Want to improve their algorithms
 - **HR tech companies** - Building AI-powered products
 - **Research institutions** - Studying hiring patterns and bias
@@ -61,7 +61,7 @@ The more users you have, the more data you accrue, the more valuable your datase
                         ↓
 ┌─────────────────────────────────────────────────────┐
 │  Layer 3: Data Marketplace (API)                    │
-│  - Export to ScalAI-compatible format (JSONL)      │
+│  - Export to Scale AI-compatible format (JSONL)      │
 │  - Pricing engine with bulk discounts              │
 │  - Self-service purchase API                       │
 └─────────────────────────────────────────────────────┘
@@ -275,7 +275,7 @@ for workflow in successful_workflows:
 
 ## 💰 Data Export & Sales
 
-### ScalAI-Compatible Format
+### Scale AI-Compatible Format
 
 Export data in the format AI training companies expect:
 
@@ -328,7 +328,7 @@ Each line is a complete training record:
 ```
 
 This is the standard format for:
-- ScalAI
+- Scale AI
 - Scale AI
 - Labelbox
 - Amazon SageMaker Ground Truth
@@ -377,7 +377,7 @@ Request:
 {
   "product_id": "search_query_pairs_v1",
   "buyer_email": "ai-training@scal.ai",
-  "buyer_organization": "ScalAI",
+  "buyer_organization": "Scale AI",
   "record_count": 1000,
   "filters": {
     "job_category": ["software_engineering"],
