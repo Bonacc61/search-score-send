@@ -1,0 +1,513 @@
+{
+  "name": "Search-Score-Send Recruitment Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "search-score-send",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "search-score-send-webhook"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/jd/extract",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "raw_text",
+              "value": "={{$json.jobDescription}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1000
+          }
+        }
+      },
+      "id": "jd-extractor",
+      "name": "JD Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "notes": "Uses Claude API to extract structured requirements from job description"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "split-for-parallel-search",
+      "name": "Split for Parallel Search",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/search/linkedin",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$json.search_boolean.linkedin}}"
+            },
+            {
+              "name": "limit",
+              "value": "={{Math.floor($json.maxCandidates / 3)}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "linkedin-search",
+      "name": "LinkedIn Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200],
+      "notes": "Parallel search on LinkedIn using Boolean query"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/search/github",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$json.search_boolean.github}}"
+            },
+            {
+              "name": "limit",
+              "value": "={{Math.floor($json.maxCandidates / 3)}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "github-search",
+      "name": "GitHub Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Parallel search on GitHub"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/search/stackoverflow",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$json.search_boolean.stackoverflow}}"
+            },
+            {
+              "name": "limit",
+              "value": "={{Math.floor($json.maxCandidates / 3)}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "stackoverflow-search",
+      "name": "Stack Overflow Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 400],
+      "notes": "Parallel search on Stack Overflow"
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "email",
+              "field2": "email"
+            }
+          ]
+        },
+        "options": {
+          "fuzzyCompare": false
+        }
+      },
+      "id": "merge-search-results",
+      "name": "Merge Search Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1050, 300],
+      "notes": "Combine results from all platforms and deduplicate"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/scoring/batch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "candidates",
+              "value": "={{$json}}"
+            },
+            {
+              "name": "job_requirements",
+              "value": "={{$node['JD Extraction'].json}}"
+            },
+            {
+              "name": "threshold",
+              "value": "={{$json.scoreThreshold || 80}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "batch-scoring",
+      "name": "Batch Candidate Scoring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300],
+      "notes": "Score all candidates using Claude API with GDPR anonymization"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.overall_score}}",
+              "operation": "largerEqual",
+              "value2": "={{$node['Webhook Trigger'].json.scoreThreshold || 80}}"
+            }
+          ]
+        }
+      },
+      "id": "filter-qualified",
+      "name": "Filter Qualified (80%+)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "notes": "Only candidates scoring 80% or higher proceed"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.API_URL}}/api/messages/generate-batch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "qualified_candidates",
+              "value": "={{$json}}"
+            },
+            {
+              "name": "job",
+              "value": "={{$node['JD Extraction'].json}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "generate-messages",
+      "name": "Generate Personalized Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200],
+      "notes": "Generate truly personalized messages (not templates) using Claude API"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.callbackUrl}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "completed"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{$workflow.id}}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{$execution.id}}"
+            },
+            {
+              "name": "candidates_found",
+              "value": "={{$node['Merge Search Results'].json.length}}"
+            },
+            {
+              "name": "candidates_scored",
+              "value": "={{$node['Batch Candidate Scoring'].json.scored}}"
+            },
+            {
+              "name": "candidates_qualified",
+              "value": "={{$node['Generate Personalized Messages'].json.length}}"
+            },
+            {
+              "name": "review_url",
+              "value": "={{$env.FRONTEND_URL}}/workflows/{{$execution.id}}/review"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "notify-callback",
+      "name": "Notify Progress (Optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 200],
+      "notes": "Send progress update to callback URL if provided"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  workflow_id: $workflow.id,\n  execution_id: $execution.id,\n  status: 'completed',\n  candidates_found: $node['Merge Search Results'].json.length,\n  candidates_scored: $node['Batch Candidate Scoring'].json.scored,\n  candidates_qualified: $node['Generate Personalized Messages'].json.length,\n  review_url: $env.FRONTEND_URL + '/workflows/' + $execution.id + '/review',\n  estimated_duration: '5 minutes',\n  timestamp: new Date().toISOString()\n})}}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2050, 300],
+      "notes": "Return workflow results to caller"
+    },
+    {
+      "parameters": {
+        "content": "## Search-Score-Send Workflow\n\n**Version:** 1.0\n**Created:** 2026-03-30\n\n### Overview\nAutomated recruitment workflow that processes job descriptions and returns qualified candidates with personalized outreach messages.\n\n### Input (POST to webhook)\n```json\n{\n  \"jobDescription\": \"string\",\n  \"maxCandidates\": 50,\n  \"scoreThreshold\": 80,\n  \"callbackUrl\": \"optional\"\n}\n```\n\n### Output\n```json\n{\n  \"workflow_id\": \"uuid\",\n  \"execution_id\": \"uuid\",\n  \"status\": \"completed\",\n  \"candidates_found\": 47,\n  \"candidates_scored\": 47,\n  \"candidates_qualified\": 12,\n  \"review_url\": \"url\"\n}\n```\n\n### Steps\n1. JD Extraction (Claude API)\n2. Parallel Search (LinkedIn + GitHub + SO)\n3. Merge & Deduplicate\n4. Batch Scoring (Claude API + GDPR)\n5. Filter 80%+ matches\n6. Generate Messages (Claude API)\n7. Notify & Respond\n\n### Environment Variables Required\n- `API_URL`: Backend API endpoint\n- `FRONTEND_URL`: Frontend dashboard URL\n\n### Performance\n- Target: < 5 minutes end-to-end\n- Parallel execution on search phase\n- Batch processing for scoring\n\n### Compliance\n- GDPR: Zero PII to Claude (anonymization)\n- EU AI Act: Human review required (HITL)\n- Audit trail: Complete logging",
+        "height": 400,
+        "width": 350
+      },
+      "id": "sticky-note-documentation",
+      "name": "Workflow Documentation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 520]
+    },
+    {
+      "parameters": {
+        "content": "⚠️ **Error Handling**\n\n- All HTTP nodes have 3 retry attempts\n- Timeouts configured per node\n- Failed searches don't block workflow\n- Callback notification is optional",
+        "height": 160,
+        "width": 250
+      },
+      "id": "sticky-note-error-handling",
+      "name": "Error Handling Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [650, 520]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "JD Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD Extraction": {
+      "main": [
+        [
+          {
+            "node": "Split for Parallel Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split for Parallel Search": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stack Overflow Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Stack Overflow Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Search Results": {
+      "main": [
+        [
+          {
+            "node": "Batch Candidate Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Candidate Scoring": {
+      "main": [
+        [
+          {
+            "node": "Filter Qualified (80%+)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Qualified (80%+)": {
+      "main": [
+        [
+          {
+            "node": "Generate Personalized Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Personalized Messages": {
+      "main": [
+        [
+          {
+            "node": "Notify Progress (Optional)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Progress (Optional)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "timezone": "Europe/Amsterdam",
+    "saveExecutionProgress": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 300
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2026-03-30T22:00:00.000Z",
+      "updatedAt": "2026-03-30T22:00:00.000Z",
+      "id": "1",
+      "name": "recruitment"
+    },
+    {
+      "createdAt": "2026-03-30T22:00:00.000Z",
+      "updatedAt": "2026-03-30T22:00:00.000Z",
+      "id": "2",
+      "name": "automation"
+    },
+    {
+      "createdAt": "2026-03-30T22:00:00.000Z",
+      "updatedAt": "2026-03-30T22:00:00.000Z",
+      "id": "3",
+      "name": "ai"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-30T22:00:00.000Z",
+  "versionId": "1"
+}
